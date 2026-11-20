@@ -19,6 +19,8 @@ import {
   Loader2,
   FileText,
   ShieldAlert,
+  Eye,
+  MousePointerClick,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import type { Importer } from "@/lib/types";
@@ -34,12 +36,21 @@ interface OutreachEmailItem {
   subject: string;
   body: string;
   snippet?: string;
-  status: "unread" | "read" | "sent" | "delivered" | "failed" | "bounced";
+  status: "unread" | "read" | "sent" | "delivered" | "failed" | "bounced" | "opened" | "clicked";
   sentAt?: string;
   createdAt: string;
   userName?: string;
   classification?: string;
   error?: string;
+  trackingId?: string;
+  openCount?: number;
+  firstOpenedAt?: string;
+  lastOpenedAt?: string;
+  isOpenAppleMpp?: boolean;
+  inferredFromClick?: boolean;
+  clickCount?: number;
+  firstClickedAt?: string;
+  lastClickedAt?: string;
   importerId?: {
     _id?: string;
     companyName?: string;
@@ -56,7 +67,7 @@ interface OutreachViewProps {
   onSelectImporter?: (importer: Importer, initialTab?: "profile" | "emails") => void;
 }
 
-type FilterTab = "all" | "sent" | "bounced";
+type FilterTab = "all" | "opened" | "sent" | "bounced";
 
 export function OutreachView({
   importers = [],
@@ -102,7 +113,11 @@ export function OutreachView({
 
     let list = (data.emails as unknown as OutreachEmailItem[]);
 
-    if (tab === "sent") {
+    if (tab === "opened") {
+      list = list.filter(
+        (e) => (e.openCount && e.openCount > 0) || e.status === "opened"
+      );
+    } else if (tab === "sent") {
       list = list.filter(
         (e) =>
           e.direction === "outbound" &&
@@ -147,6 +162,9 @@ export function OutreachView({
         e.classification !== "bounce"
     ).length;
     const deliveredCount = rawEmails.filter((e) => e.status === "delivered").length;
+    const openedCount = rawEmails.filter(
+      (e) => (e.openCount && e.openCount > 0) || e.status === "opened"
+    ).length;
     const emailBounces = rawEmails.filter(
       (e) =>
         e.status === "bounced" ||
@@ -160,6 +178,9 @@ export function OutreachView({
     return {
       sent: Math.max(data?.stats?.totalSent || 0, sentCount),
       delivered: Math.max(data?.stats?.totalDelivered || 0, deliveredCount),
+      opened: Math.max(data?.stats?.totalOpened || 0, openedCount),
+      humanOpens: data?.stats?.humanOpens || openedCount,
+      appleMppOpens: data?.stats?.appleMppOpens || 0,
       bounced: Math.max(data?.stats?.totalBounced || 0, bouncedCount),
       total: rawEmails.length,
     };
@@ -215,7 +236,7 @@ export function OutreachView({
       </div>
 
       {/* KPI Stats Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {/* Total Sent */}
         <div
           onClick={() => setTab("all")}
@@ -233,6 +254,32 @@ export function OutreachView({
           </div>
           <p className="mt-2 text-2xl font-black text-slate-900">{stats.total}</p>
           <p className="mt-0.5 text-[11px] text-slate-500">All outbound emails</p>
+        </div>
+
+        {/* Opened Emails (Mailchimp-Grade Accuracy) */}
+        <div
+          onClick={() => setTab("opened")}
+          className={`cursor-pointer rounded-2xl border p-4 transition shadow-2xs ${
+            tab === "opened"
+              ? "border-purple-300 bg-purple-50/60 ring-2 ring-purple-500/20"
+              : "border-slate-200 bg-white hover:border-slate-300"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-purple-900">Opened Emails</span>
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-100 text-purple-700">
+              <Eye className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <p className="text-2xl font-black text-purple-800">{stats.opened}</p>
+            {stats.sent > 0 && (
+              <span className="text-xs font-bold text-purple-600">
+                ({Math.round((stats.opened / stats.sent) * 100)}%)
+              </span>
+            )}
+          </div>
+          <p className="mt-0.5 text-[11px] text-purple-600">Verified pixel & clicks</p>
         </div>
 
         {/* Sent & Active */}
@@ -301,6 +348,17 @@ export function OutreachView({
             }`}
           >
             All Outreach ({stats.total})
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("opened")}
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-bold transition ${
+              tab === "opened"
+                ? "bg-purple-600 text-white shadow-2xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            Opened ({stats.opened})
           </button>
           <button
             type="button"
@@ -430,6 +488,29 @@ export function OutreachView({
                           <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-bold text-rose-800 border border-rose-200">
                             <AlertTriangle className="h-3 w-3" /> Bounced
                           </span>
+                        ) : (email.openCount && email.openCount > 0) || email.status === "opened" ? (
+                          <div className="flex flex-col gap-1 items-start">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-1 text-[11px] font-bold text-purple-800 border border-purple-200">
+                              <Eye className="h-3 w-3 text-purple-600" /> Opened ({email.openCount || 1}x)
+                            </span>
+                            <div className="flex items-center gap-1">
+                              {email.inferredFromClick && (
+                                <span className="inline-flex items-center gap-0.5 text-[9px] bg-indigo-50 border border-indigo-200 text-indigo-700 px-1.5 py-0.5 rounded-md font-medium" title="Inferred open via link click">
+                                  <MousePointerClick className="h-2.5 w-2.5" /> Click
+                                </span>
+                              )}
+                              {email.isOpenAppleMpp && (
+                                <span className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-1.5 py-0.5 rounded-md font-medium" title="Apple Mail Privacy Protection pre-fetch">
+                                  Apple MPP
+                                </span>
+                              )}
+                              {email.firstOpenedAt && (
+                                <span className="text-[10px] text-slate-400 font-medium">
+                                  {formatTimestamp(email.firstOpenedAt)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         ) : email.status === "delivered" ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-bold text-blue-800 border border-blue-200">
                             <CheckCircle2 className="h-3 w-3" /> Delivered
@@ -533,6 +614,10 @@ export function OutreachView({
                       <span className="inline-flex items-center gap-1 rounded bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-800">
                         <AlertTriangle className="h-3 w-3" /> Bounced
                       </span>
+                    ) : (selectedEmail.openCount && selectedEmail.openCount > 0) || selectedEmail.status === "opened" ? (
+                      <span className="inline-flex items-center gap-1 rounded bg-purple-100 px-2 py-0.5 text-xs font-bold text-purple-800">
+                        <Eye className="h-3 w-3" /> Opened ({selectedEmail.openCount || 1}x)
+                      </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">
                         <CheckCircle2 className="h-3 w-3" /> Sent Successfully
@@ -548,6 +633,50 @@ export function OutreachView({
                   </div>
                 </div>
               </div>
+
+              {/* Mailchimp Open Tracking Analytics Card */}
+              {((selectedEmail.openCount && selectedEmail.openCount > 0) || selectedEmail.firstOpenedAt || selectedEmail.clickCount) && (
+                <div className="rounded-xl border border-purple-200 bg-purple-50/50 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-purple-600 text-white">
+                      <Eye className="h-3.5 w-3.5" />
+                    </div>
+                    <h4 className="text-xs font-bold text-purple-950 uppercase tracking-wide">
+                      Email Open & Interaction Analytics
+                    </h4>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mt-3">
+                    <div className="bg-white rounded-lg p-2.5 border border-purple-100">
+                      <span className="text-[10px] text-slate-500 font-medium">Total Opens</span>
+                      <p className="text-base font-black text-purple-900 mt-0.5">
+                        {selectedEmail.openCount || 1} time{(selectedEmail.openCount || 1) !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2.5 border border-purple-100">
+                      <span className="text-[10px] text-slate-500 font-medium">First Opened</span>
+                      <p className="text-xs font-bold text-slate-800 mt-0.5">
+                        {formatTimestamp(selectedEmail.firstOpenedAt || selectedEmail.createdAt)}
+                      </p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2.5 border border-purple-100">
+                      <span className="text-[10px] text-slate-500 font-medium">Link Clicks</span>
+                      <p className="text-base font-black text-indigo-900 mt-0.5">
+                        {selectedEmail.clickCount || 0} click{(selectedEmail.clickCount || 0) !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2.5 border border-purple-100">
+                      <span className="text-[10px] text-slate-500 font-medium">Accuracy Verification</span>
+                      <p className="text-xs font-bold text-slate-800 mt-0.5">
+                        {selectedEmail.inferredFromClick
+                          ? "Inferred (Link Clicked)"
+                          : selectedEmail.isOpenAppleMpp
+                          ? "Apple MPP Proxy"
+                          : "Verified Pixel Load"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Subject */}
               <div>

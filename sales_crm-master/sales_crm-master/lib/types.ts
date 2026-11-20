@@ -292,7 +292,7 @@ export interface EmailMessage {
   subject: string;
   body: string;
   snippet?: string;
-  status: "unread" | "read" | "sent" | "delivered" | "failed" | "bounced";
+  status: "unread" | "read" | "sent" | "delivered" | "failed" | "bounced" | "opened" | "clicked";
   sentAt?: string;
   receivedAt?: string;
   createdAt: string;
@@ -300,6 +300,29 @@ export interface EmailMessage {
   userName?: string;
   tags?: string[];
   inReplyTo?: string;
+  // Mailchimp Tracking
+  trackingId?: string;
+  openCount?: number;
+  firstOpenedAt?: string;
+  lastOpenedAt?: string;
+  isOpenAppleMpp?: boolean;
+  inferredFromClick?: boolean;
+  clickCount?: number;
+  firstClickedAt?: string;
+  lastClickedAt?: string;
+  opens?: Array<{
+    timestamp: string;
+    ip?: string;
+    userAgent?: string;
+    isAppleMpp?: boolean;
+    inferredFromClick?: boolean;
+  }>;
+  clicks?: Array<{
+    url: string;
+    timestamp: string;
+    ip?: string;
+    userAgent?: string;
+  }>;
 }
 
 export interface EmailTemplate {

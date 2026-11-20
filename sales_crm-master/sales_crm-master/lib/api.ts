@@ -604,6 +604,10 @@ export interface OutreachEmailLogsResponse {
     totalBounced: number;
     totalDelivered: number;
     totalReplies: number;
+    totalOpened?: number;
+    humanOpens?: number;
+    appleMppOpens?: number;
+    totalClicked?: number;
   };
   emails: (EmailMessage & {
     importerId?: Importer | string;
